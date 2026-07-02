@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import {
   flexRender,
   getCoreRowModel,
@@ -8,6 +9,8 @@ import {
   createColumnHelper,
 } from "@tanstack/react-table";
 import type { CertificateData } from "@/types/certificate";
+import type { StudentData, StatsData } from "@/types/api";
+import { useAuth } from "@/lib/AuthContext";
 import { ExportCertificateButton } from "@/components/certificate/ExportCertificateButton";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -19,62 +22,11 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Users, GraduationCap } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Users, GraduationCap, BookOpen, TrendingUp, LogOut } from "lucide-react";
 
-const SAMPLE_STUDENTS: (CertificateData & { email: string; progress: number })[] = [
-  {
-    studentFullName: "Mohamed El Machhoune",
-    email: "mohamed@example.com",
-    durationF: "120 Hours",
-    formationDate: "2026-06-15",
-    certificateId: "CERT-2026-001",
-    instructorName: "Dr. Sarah Johnson",
-    academyName: "E-Platform Academy",
-    progress: 100,
-  },
-  {
-    studentFullName: "Alice Martin",
-    email: "alice@example.com",
-    durationF: "80 Hours",
-    formationDate: "2026-06-10",
-    certificateId: "CERT-2026-002",
-    instructorName: "Dr. Sarah Johnson",
-    academyName: "E-Platform Academy",
-    progress: 100,
-  },
-  {
-    studentFullName: "James Wilson",
-    email: "james@example.com",
-    durationF: "60 Hours",
-    formationDate: "2026-05-28",
-    certificateId: "CERT-2026-003",
-    instructorName: "Dr. Sarah Johnson",
-    academyName: "E-Platform Academy",
-    progress: 85,
-  },
-  {
-    studentFullName: "Emma Thompson",
-    email: "emma@example.com",
-    durationF: "100 Hours",
-    formationDate: "2026-06-20",
-    certificateId: "CERT-2026-004",
-    instructorName: "Dr. Sarah Johnson",
-    academyName: "E-Platform Academy",
-    progress: 92,
-  },
-  {
-    studentFullName: "Liam Chen",
-    email: "liam@example.com",
-    durationF: "90 Hours",
-    formationDate: "2026-06-18",
-    certificateId: "CERT-2026-005",
-    instructorName: "Dr. Sarah Johnson",
-    academyName: "E-Platform Academy",
-    progress: 78,
-  },
-];
-
-const columnHelper = createColumnHelper<(typeof SAMPLE_STUDENTS)[number]>();
+const columnHelper = createColumnHelper<StudentData>();
 
 const columns = [
   columnHelper.accessor("studentFullName", {
@@ -118,88 +70,138 @@ const columns = [
           </span>
         );
       }
-      return (
-        <ExportCertificateButton
-          data={{
-            studentFullName: student.studentFullName,
-            durationF: student.durationF,
-            formationDate: student.formationDate,
-            certificateId: student.certificateId,
-            instructorName: student.instructorName,
-            academyName: student.academyName,
-          }}
-        />
-      );
+      const certData: CertificateData = {
+        studentFullName: student.studentFullName,
+        durationF: student.durationF,
+        formationDate: student.formationDate,
+        certificateId: student.certificateId,
+        instructorName: student.instructorName,
+        academyName: student.academyName,
+      };
+      return <ExportCertificateButton data={certData} />;
     },
   }),
 ];
 
+const statCards: {
+  key: keyof StatsData;
+  label: string;
+  icon: typeof Users;
+  color: string;
+  suffix?: string;
+}[] = [
+  { key: "totalStudents", label: "Total Students", icon: Users, color: "text-primary" },
+  { key: "studentsWithCertificate", label: "Certificates Available", icon: GraduationCap, color: "text-accent" },
+  { key: "completionRate", label: "Completion Rate", icon: TrendingUp, color: "text-success", suffix: "%" },
+  { key: "totalCourses", label: "Active Courses", icon: BookOpen, color: "text-secondary" },
+];
+
 export default function InstructorDashboardPage() {
-  const [data] = useState(SAMPLE_STUDENTS);
+  const { user, loading: authLoading, logout } = useAuth();
+  const router = useRouter();
+  const [students, setStudents] = useState<StudentData[]>([]);
+  const [stats, setStats] = useState<StatsData | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    if (authLoading) return;
+    if (!user) {
+      router.push("/login");
+      return;
+    }
+
+    async function fetchData() {
+      try {
+        const [studentsRes, statsRes] = await Promise.all([
+          fetch("/api/students"),
+          fetch("/api/stats"),
+        ]);
+
+        if (studentsRes.ok) {
+          const data = await studentsRes.json();
+          setStudents(data.students);
+        }
+        if (statsRes.ok) {
+          const data = await statsRes.json();
+          setStats(data.stats);
+        }
+      } catch (error) {
+        console.error("Failed to fetch dashboard data:", error);
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    fetchData();
+  }, [user, authLoading, router]);
 
   const table = useReactTable({
-    data,
+    data: students,
     columns,
     getCoreRowModel: getCoreRowModel(),
   });
 
+  if (authLoading || !user) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-background-custom">
+        <div className="flex flex-col items-center gap-3">
+          <span className="inline-block size-6 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+          <p className="text-sm text-muted-foreground">Loading...</p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-background-custom">
       <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
-        <div className="mb-8 flex items-center gap-4">
-          <div className="flex size-14 items-center justify-center rounded-2xl bg-primary/10">
-            <GraduationCap className="size-7 text-primary" />
+        <div className="mb-8 flex items-start justify-between">
+          <div className="flex items-center gap-4">
+            <div className="flex size-14 items-center justify-center rounded-2xl bg-primary/10">
+              <GraduationCap className="size-7 text-primary" />
+            </div>
+            <div>
+              <h1 className="text-2xl font-bold text-dark">
+                Instructor Dashboard
+              </h1>
+              <p className="text-sm text-gray-custom">
+                Welcome back, {user.name}
+              </p>
+            </div>
           </div>
-          <div>
-            <h1 className="text-2xl font-bold text-dark">Instructor Dashboard</h1>
-            <p className="text-sm text-gray-custom">
-              Manage your students and generate certificates
-            </p>
-          </div>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={logout}
+            className="gap-2"
+          >
+            <LogOut className="size-4" />
+            Sign Out
+          </Button>
         </div>
 
-        <div className="mb-6 grid gap-4 sm:grid-cols-3">
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-sm font-medium">
-                <Users className="size-4 text-primary" />
-                Total Students
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <p className="text-2xl font-bold">{data.length}</p>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-sm font-medium">
-                <GraduationCap className="size-4 text-accent" />
-                Certificates Available
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <p className="text-2xl font-bold">
-                {data.filter((s) => s.progress >= 100).length}
-              </p>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-sm font-medium">
-                <GraduationCap className="size-4 text-success" />
-                Completed
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <p className="text-2xl font-bold text-success">
-                {Math.round(
-                  (data.filter((s) => s.progress >= 100).length / data.length) *
-                    100
+        <div className="mb-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          {statCards.map((stat) => (
+            <Card key={stat.key}>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2 text-sm font-medium">
+                  <stat.icon className={`size-4 ${stat.color}`} />
+                  {stat.label}
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                {loading ? (
+                  <Skeleton className="h-8 w-16" />
+                ) : (
+                  <p className="text-2xl font-bold">
+                    {stats
+                      ? `${stats[stat.key]}${stat.suffix ?? ""}`
+                      : "—"}
+                  </p>
                 )}
-                %
-              </p>
-            </CardContent>
-          </Card>
+              </CardContent>
+            </Card>
+          ))}
         </div>
 
         <Card>
@@ -207,38 +209,46 @@ export default function InstructorDashboardPage() {
             <CardTitle>Students</CardTitle>
           </CardHeader>
           <CardContent className="p-0">
-            <Table>
-              <TableHeader>
-                {table.getHeaderGroups().map((headerGroup) => (
-                  <TableRow key={headerGroup.id}>
-                    {headerGroup.headers.map((header) => (
-                      <TableHead key={header.id}>
-                        {header.isPlaceholder
-                          ? null
-                          : flexRender(
-                              header.column.columnDef.header,
-                              header.getContext()
-                            )}
-                      </TableHead>
-                    ))}
-                  </TableRow>
+            {loading ? (
+              <div className="space-y-3 p-4">
+                {Array.from({ length: 5 }).map((_, i) => (
+                  <Skeleton key={i} className="h-10 w-full" />
                 ))}
-              </TableHeader>
-              <TableBody>
-                {table.getRowModel().rows.map((row) => (
-                  <TableRow key={row.id}>
-                    {row.getVisibleCells().map((cell) => (
-                      <TableCell key={cell.id}>
-                        {flexRender(
-                          cell.column.columnDef.cell,
-                          cell.getContext()
-                        )}
-                      </TableCell>
-                    ))}
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
+              </div>
+            ) : (
+              <Table>
+                <TableHeader>
+                  {table.getHeaderGroups().map((headerGroup) => (
+                    <TableRow key={headerGroup.id}>
+                      {headerGroup.headers.map((header) => (
+                        <TableHead key={header.id}>
+                          {header.isPlaceholder
+                            ? null
+                            : flexRender(
+                                header.column.columnDef.header,
+                                header.getContext()
+                              )}
+                        </TableHead>
+                      ))}
+                    </TableRow>
+                  ))}
+                </TableHeader>
+                <TableBody>
+                  {table.getRowModel().rows.map((row) => (
+                    <TableRow key={row.id}>
+                      {row.getVisibleCells().map((cell) => (
+                        <TableCell key={cell.id}>
+                          {flexRender(
+                            cell.column.columnDef.cell,
+                            cell.getContext()
+                          )}
+                        </TableCell>
+                      ))}
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            )}
           </CardContent>
         </Card>
       </div>
