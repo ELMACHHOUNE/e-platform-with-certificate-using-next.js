@@ -3,7 +3,16 @@ import json
 import sys
 
 
+def normalize_pdf_text(text):
+    return (
+        text.replace("\ufb01", "fi")
+        .replace("\ufb02", "fl")
+        .replace("\u00ad", "")
+    )
+
+
 def get_match_rects(page, text, text_dict):
+    normalized_target = normalize_pdf_text(text)
     rects = page.search_for(text)
     if rects:
         return rects
@@ -14,7 +23,8 @@ def get_match_rects(page, text, text_dict):
             continue
         for line in block.get("lines", []):
             for span in line.get("spans", []):
-                if span.get("text") == text:
+                span_text = span.get("text", "")
+                if normalize_pdf_text(span_text) == normalized_target:
                     bbox = span.get("bbox")
                     fallback_rects.append(fitz.Rect(bbox))
 
@@ -28,6 +38,10 @@ def replace_texts(input_pdf, output_pdf, texts_file):
 
     changes = 0
     value_vertical_shift = 16
+    value_horizontal_shift = {
+        "instructorName": -40,
+        "academyName": -40,
+    }
 
     for page in doc:
         text_dict = page.get_text("dict")
@@ -52,7 +66,7 @@ def replace_texts(input_pdf, output_pdf, texts_file):
                     continue
                 for line in block.get("lines", []):
                     for span in line.get("spans", []):
-                        if span.get("text") == old_text:
+                        if normalize_pdf_text(span.get("text", "")) == normalize_pdf_text(old_text):
                             matching_span = span
                             break
                     if matching_span:
@@ -97,8 +111,9 @@ def replace_texts(input_pdf, output_pdf, texts_file):
                         overlay=True,
                     )
                 else:
+                    x_shift = value_horizontal_shift.get(old_text, 0)
                     baseline = fitz.Point(
-                        rect.x0,
+                        rect.x0 + x_shift,
                         rect.y1 - (fontsize * 0.15) - value_vertical_shift,
                     )
 
