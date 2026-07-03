@@ -36,6 +36,7 @@ export async function POST(request: Request) {
           { old: "studentFullName", new: studentFullName },
           { old: "durationF", new: durationF || "" },
           { old: "formationDate", new: formationDate || "" },
+          { old: "certiﬁcateId", new: certificateId || "" },
           { old: "instructorName", new: instructorName || "" },
           { old: "academyName", new: academyName || "" },
         ]),
@@ -45,27 +46,11 @@ export async function POST(request: Request) {
       await execFileAsync("python", [scriptPath, templatePath, outputPdf, textsList]);
 
       const pdfBuffer = await fs.readFile(outputPdf);
-      let pdfBytes = new Uint8Array(pdfBuffer);
-
-      if (certificateId) {
-        const pdfLib = await import("pdf-lib");
-        const pdfDoc = await pdfLib.PDFDocument.load(pdfBytes);
-        const page = pdfDoc.getPages()[0]!;
-        const font = await pdfDoc.embedFont(pdfLib.StandardFonts.Helvetica);
-        page.drawText(certificateId, {
-          x: 200,
-          y: 200,
-          size: 35,
-          font,
-          color: pdfLib.rgb(0.094, 0.247, 0.376),
-        });
-        pdfBytes = new Uint8Array(await pdfDoc.save());
-      }
 
       await fs.rm(tmpDir, { recursive: true, force: true });
 
       const safeName = studentFullName.replace(/[^a-zA-Z0-9]/g, "_");
-      return new NextResponse(Buffer.from(pdfBytes), {
+      return new NextResponse(Buffer.from(pdfBuffer), {
         status: 200,
         headers: {
           "Content-Type": "application/pdf",
