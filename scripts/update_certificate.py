@@ -27,7 +27,7 @@ def replace_texts(input_pdf, output_pdf, texts_file):
         texts = json.load(f)
 
     changes = 0
-    value_vertical_shift = 10
+    value_vertical_shift = 16
 
     for page in doc:
         text_dict = page.get_text("dict")
@@ -75,22 +75,24 @@ def replace_texts(input_pdf, output_pdf, texts_file):
 
             for rect in get_match_rects(page, old_text, text_dict):
                 if old_text == "studentFullName":
+                    fitted_fontsize = fontsize
                     text_width = fitz.get_text_length(
                         new_text,
                         fontname=fontname,
-                        fontsize=fontsize,
+                        fontsize=fitted_fontsize,
                     )
-                    centered_x = rect.x0 + max((rect.width - text_width) / 2, 0)
+
+                    centered_x = rect.x0 + (rect.width - text_width) / 2
                     baseline = fitz.Point(
                         centered_x,
-                        rect.y1 - (fontsize * 0.15) - value_vertical_shift,
+                        rect.y1 - (fitted_fontsize * 0.15) - value_vertical_shift,
                     )
 
                     page.insert_text(
                         baseline,
                         new_text,
                         fontname=fontname,
-                        fontsize=fontsize,
+                        fontsize=fitted_fontsize,
                         color=(r, g, bv),
                         overlay=True,
                     )
