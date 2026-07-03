@@ -7,13 +7,6 @@ import os from "os";
 
 const execFileAsync = promisify(execFile);
 
-interface TextDef {
-  text: string;
-  x: number;
-  y: number;
-  size: number;
-}
-
 export async function POST(request: Request) {
   try {
     const data = await request.json();
@@ -31,63 +24,43 @@ export async function POST(request: Request) {
       "certificate.pdf"
     );
     const scriptPath = path.join(process.cwd(), "scripts", "update_certificate.py");
-
     const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "cert-"));
 
     try {
-      // Step 1: Redact old placeholder texts using PyMuPDF
-      const redactedPdf = path.join(tmpDir, "redacted.pdf");
-      const redactList = path.join(tmpDir, "redact.json");
+      const redactedPdf = path.join(tmpDir, "output.pdf");
+      const redactList = path.join(tmpDir, "replacements.json");
 
       await fs.writeFile(
         redactList,
         JSON.stringify([
-          { old: "studentFullName" },
-          { old: "durationF" },
-          { old: "formationDate" },
-          { old: "instructorName" },
-          { old: "academyName" },
+          { old: "studentFullName", new: studentFullName },
+          { old: "durationF", new: durationF || "" },
+          { old: "formationDate", new: formationDate || "" },
+          { old: "instructorName", new: instructorName || "" },
+          { old: "academyName", new: academyName || "" },
         ]),
         "utf-8"
       );
 
       await execFileAsync("python", [scriptPath, templatePath, redactedPdf, redactList]);
 
-      // Step 2: Draw all texts at exact positions using pdf-lib
       const pdfBuffer = await fs.readFile(redactedPdf);
-      const pdfLib = await import("pdf-lib");
-      const pdfDoc = await pdfLib.PDFDocument.load(new Uint8Array(pdfBuffer));
-      const page = pdfDoc.getPages()[0]!;
-      const font = await pdfDoc.embedFont(pdfLib.StandardFonts.Helvetica);
-      const color = pdfLib.rgb(0.094, 0.239, 0.376);
+      let pdfBytes = new Uint8Array(pdfBuffer);
 
-      const nameField = { text: studentFullName, size: 184 };
-      const nameCenterX = 1754;
-      const nameWidth = font.widthOfTextAtSize(nameField.text, nameField.size);
-      const nameX = nameCenterX - nameWidth / 2;
-
-      page.drawText(nameField.text, {
-        x: nameX,
-        y: 1445,
-        size: nameField.size,
-        font,
-        color,
-      });
-
-      const extraFields: TextDef[] = [
-        { text: durationF || "", x: 1071, y: 738, size: 55 },
-        { text: formationDate || "", x: 1513, y: 735, size: 60 },
-        { text: instructorName || "", x: 1169, y: 232, size: 55 },
-        { text: academyName || "", x: 2082, y: 237, size: 55 },
-        { text: certificateId || "", x: 200, y: 200, size: 35 },
-      ];
-
-      for (const f of extraFields) {
-        if (!f.text) continue;
-        page.drawText(f.text, { x: f.x, y: f.y, size: f.size, font, color });
+      if (certificateId) {
+        const pdfLib = await import("pdf-lib");
+        const pdfDoc = await pdfLib.PDFDocument.load(pdfBytes);
+        const page = pdfDoc.getPages()[0]!;
+        const font = await pdfDoc.embedFont(pdfLib.StandardFonts.Helvetica);
+        page.drawText(certificateId, {
+          x: 200,
+          y: 200,
+          size: 35,
+          font,
+          color: pdfLib.rgb(0.094, 0.239, 0.376),
+        });
+        pdfBytes = new Uint8Array(await pdfDoc.save());
       }
-
-      const pdfBytes = new Uint8Array(await pdfDoc.save());
 
       await fs.rm(tmpDir, { recursive: true, force: true });
 
