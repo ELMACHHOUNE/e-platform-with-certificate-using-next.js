@@ -2,48 +2,41 @@ import fitz
 import json
 import sys
 
-def get_label_formatting(text_dict, label_text):
+
+def get_match_rects(page, text, text_dict):
+    rects = page.search_for(text)
+    if rects:
+        return rects
+
+    fallback_rects = []
     for block in text_dict.get("blocks", []):
         if block.get("type") != 0:
             continue
         for line in block.get("lines", []):
             for span in line.get("spans", []):
-                if span.get("text") == label_text:
+                if span.get("text") == text:
                     bbox = span.get("bbox")
-                    return {
-                        "x": bbox[0],
-                        "y": bbox[3],
-                        "size": span.get("size", 55),
-                        "color": span.get("color", 0),
-                        "font": str(span.get("font", "")).lower(),
-                    }
-    return None
+                    fallback_rects.append(fitz.Rect(bbox))
 
-def redact_texts(input_pdf, output_pdf, texts_file):
+    return fallback_rects
+
+def replace_texts(input_pdf, output_pdf, texts_file):
     doc = fitz.open(input_pdf)
 
     with open(texts_file, "r", encoding="utf-8") as f:
         texts = json.load(f)
 
-    removed = 0
+    changes = 0
+    value_vertical_shift = 10
 
     for page in doc:
         text_dict = page.get_text("dict")
 
-        label_instructor = get_label_formatting(text_dict, "Instructor Signature")
-        label_training = get_label_formatting(text_dict, "Training Academy")
-
         for t in texts:
             old_text = t["old"]
-            for block in text_dict.get("blocks", []):
-                if block.get("type") != 0:
-                    continue
-                for line in block.get("lines", []):
-                    for span in line.get("spans", []):
-                        if span.get("text") == old_text:
-                            bbox = span.get("bbox")
-                            page.add_redact_annot((bbox[0], bbox[1], bbox[2], bbox[3]), fill=None)
-                            removed += 1
+            for rect in get_match_rects(page, old_text, text_dict):
+                page.add_redact_annot(rect, fill=None)
+                changes += 1
 
         page.apply_redactions()
 
@@ -53,63 +46,76 @@ def redact_texts(input_pdf, output_pdf, texts_file):
             if new_text == old_text:
                 continue
 
+            matching_span = None
             for block in text_dict.get("blocks", []):
                 if block.get("type") != 0:
                     continue
                 for line in block.get("lines", []):
                     for span in line.get("spans", []):
                         if span.get("text") == old_text:
-                            bbox = span.get("bbox")
-                            fontsize = span.get("size", 11)
-                            color = span.get("color", 0)
-                            r = ((color >> 16) & 255) / 255.0
-                            g = ((color >> 8) & 255) / 255.0
-                            bv = (color & 255) / 255.0
+                            matching_span = span
+                            break
+                    if matching_span:
+                        break
+                if matching_span:
+                    break
 
-                            baseline = fitz.Point(bbox[0], bbox[3] - (fontsize * 0.15))
-                            font_str = str(span.get("font", "")).lower()
-                            fontname = "helv"
-                            if "times" in font_str:
-                                fontname = "ti-ro"
-                            elif "courier" in font_str:
-                                fontname = "cour"
+            fontsize = matching_span.get("size", 11) if matching_span else 11
+            color = matching_span.get("color", 0) if matching_span else 0
+            r = ((color >> 16) & 255) / 255.0
+            g = ((color >> 8) & 255) / 255.0
+            bv = (color & 255) / 255.0
 
-                            page.insert_text(
-                                baseline,
-                                new_text,
-                                fontname=fontname,
-                                fontsize=fontsize,
-                                color=(r, g, bv),
-                                overlay=True,
-                            )
+            font_str = str(matching_span.get("font", "") if matching_span else "").lower()
+            fontname = "helv"
+            if "times" in font_str:
+                fontname = "ti-ro"
+            elif "courier" in font_str:
+                fontname = "cour"
 
-        # Re-draw labels that were in the same block
-        for label_info, label_text in [
-            (label_instructor, "Instructor Signature"),
-            (label_training, "Training Academy"),
-        ]:
-            if label_info:
-                c = label_info["color"]
-                r = ((c >> 16) & 255) / 255.0
-                g = ((c >> 8) & 255) / 255.0
-                bv = (c & 255) / 255.0
-                baseline = fitz.Point(label_info["x"], label_info["y"] - (label_info["size"] * 0.15))
-                page.insert_text(
-                    baseline,
-                    label_text,
-                    fontname="helv",
-                    fontsize=label_info["size"],
-                    color=(r, g, bv),
-                    overlay=True,
-                )
+            for rect in get_match_rects(page, old_text, text_dict):
+                if old_text == "studentFullName":
+                    text_width = fitz.get_text_length(
+                        new_text,
+                        fontname=fontname,
+                        fontsize=fontsize,
+                    )
+                    centered_x = rect.x0 + max((rect.width - text_width) / 2, 0)
+                    baseline = fitz.Point(
+                        centered_x,
+                        rect.y1 - (fontsize * 0.15) - value_vertical_shift,
+                    )
+
+                    page.insert_text(
+                        baseline,
+                        new_text,
+                        fontname=fontname,
+                        fontsize=fontsize,
+                        color=(r, g, bv),
+                        overlay=True,
+                    )
+                else:
+                    baseline = fitz.Point(
+                        rect.x0,
+                        rect.y1 - (fontsize * 0.15) - value_vertical_shift,
+                    )
+
+                    page.insert_text(
+                        baseline,
+                        new_text,
+                        fontname=fontname,
+                        fontsize=fontsize,
+                        color=(r, g, bv),
+                        overlay=True,
+                    )
 
     doc.save(output_pdf, deflate=True)
     doc.close()
-    print(f"Done. Processed {removed} instances. Output: {output_pdf}")
+    print(f"Done. Processed {changes} instances. Output: {output_pdf}")
 
 if __name__ == "__main__":
     if len(sys.argv) < 4:
         print("Usage: python update_certificate.py <input_pdf> <output_pdf> <texts_file>")
         sys.exit(1)
 
-    redact_texts(sys.argv[1], sys.argv[2], sys.argv[3])
+    replace_texts(sys.argv[1], sys.argv[2], sys.argv[3])

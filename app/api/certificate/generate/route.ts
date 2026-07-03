@@ -27,11 +27,11 @@ export async function POST(request: Request) {
     const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "cert-"));
 
     try {
-      const redactedPdf = path.join(tmpDir, "output.pdf");
-      const redactList = path.join(tmpDir, "replacements.json");
+      const outputPdf = path.join(tmpDir, "output.pdf");
+      const textsList = path.join(tmpDir, "texts.json");
 
       await fs.writeFile(
-        redactList,
+        textsList,
         JSON.stringify([
           { old: "studentFullName", new: studentFullName },
           { old: "durationF", new: durationF || "" },
@@ -42,9 +42,9 @@ export async function POST(request: Request) {
         "utf-8"
       );
 
-      await execFileAsync("python", [scriptPath, templatePath, redactedPdf, redactList]);
+      await execFileAsync("python", [scriptPath, templatePath, outputPdf, textsList]);
 
-      const pdfBuffer = await fs.readFile(redactedPdf);
+      const pdfBuffer = await fs.readFile(outputPdf);
       let pdfBytes = new Uint8Array(pdfBuffer);
 
       if (certificateId) {
@@ -57,7 +57,7 @@ export async function POST(request: Request) {
           y: 200,
           size: 35,
           font,
-          color: pdfLib.rgb(0.094, 0.239, 0.376),
+          color: pdfLib.rgb(0.094, 0.247, 0.376),
         });
         pdfBytes = new Uint8Array(await pdfDoc.save());
       }
