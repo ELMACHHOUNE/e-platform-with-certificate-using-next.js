@@ -18,6 +18,9 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: "E-Platform",
   description: "E-Learning Platform",
+  icons: {
+    icon: "/gotodev.webp",
+  },
 };
 
 export default function RootLayout({
