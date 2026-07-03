@@ -61,8 +61,20 @@ export async function POST(request: Request) {
       const font = await pdfDoc.embedFont(pdfLib.StandardFonts.Helvetica);
       const color = pdfLib.rgb(0.094, 0.239, 0.376);
 
-      const fields: TextDef[] = [
-        { text: studentFullName, x: 1078, y: 1445, size: 184 },
+      const nameField = { text: studentFullName, size: 184 };
+      const nameCenterX = 1754;
+      const nameWidth = font.widthOfTextAtSize(nameField.text, nameField.size);
+      const nameX = nameCenterX - nameWidth / 2;
+
+      page.drawText(nameField.text, {
+        x: nameX,
+        y: 1445,
+        size: nameField.size,
+        font,
+        color,
+      });
+
+      const extraFields: TextDef[] = [
         { text: durationF || "", x: 1071, y: 738, size: 55 },
         { text: formationDate || "", x: 1513, y: 735, size: 60 },
         { text: instructorName || "", x: 1169, y: 232, size: 55 },
@@ -70,7 +82,7 @@ export async function POST(request: Request) {
         { text: certificateId || "", x: 200, y: 200, size: 35 },
       ];
 
-      for (const f of fields) {
+      for (const f of extraFields) {
         if (!f.text) continue;
         page.drawText(f.text, { x: f.x, y: f.y, size: f.size, font, color });
       }
